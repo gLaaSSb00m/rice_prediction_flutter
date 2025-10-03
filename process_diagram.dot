@@ -1,0 +1,30 @@
+digraph rice_prediction_process {
+    rankdir=TB;  // Changed to vertical layout (top to bottom)
+    node [shape=box, style=filled, color=lightblue];
+
+    start [label="Start"];
+    load_model [label="Load TensorFlow Lite Model"];
+    request_permission [label="Request Photo Gallery Permission"];
+    select_image [label="Select Image from Gallery"];
+    preprocess_image [label="Preprocess Image (Resize to 224x224, Normalize)"];
+    run_inference [label="Run Inference with TFLite Model"];
+    display_result [label="Display Prediction Result"];
+    error_handling [label="Handle Errors"];
+    end [label="End"];
+
+    start -> load_model;
+    load_model -> request_permission;
+    request_permission -> select_image;
+    select_image -> preprocess_image;
+    preprocess_image -> run_inference;
+    run_inference -> display_result;
+    display_result -> end;
+
+    // Error handling paths
+    load_model -> error_handling [label="Error"];
+    request_permission -> error_handling [label="Permission Denied"];
+    select_image -> error_handling [label="No Image Selected"];
+    preprocess_image -> error_handling [label="Image Decode Failed"];
+    run_inference -> error_handling [label="Prediction Failed"];
+    error_handling -> end;
+}
