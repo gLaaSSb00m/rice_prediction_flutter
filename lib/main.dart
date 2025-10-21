@@ -1,10 +1,16 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image/image.dart' as img;
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'welcome_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -22,7 +28,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.green,
         useMaterial3: true,
       ),
-      home: const MyHomePage(),
+      home: const WelcomePage(),
     );
   }
 }
@@ -38,11 +44,15 @@ class _MyHomePageState extends State<MyHomePage> {
   File? _image;
   String _prediction = 'No prediction yet';
   double _confidence = 0.0;
+  String _riceInfo = '';
   Interpreter? _interpreter;
   bool _isLoading = false;
   String _errorMessage = '';
+  String _modelPath = '';
+  List<String> _riceClasses = [];
+  List<Map<String, dynamic>> _riceInfos = [];
 
-  final List<String> _riceClasses = [
+  final List<String> _defaultRiceClasses = [
     "10_Lal_Aush","11_Jirashail","12_Gutisharna","13_Red_Cargo","14_Najirshail",
     "15_Katari_Polao","16_Lal_Biroi","17_Chinigura_Polao","18_Amondhan","19_Shorna5",
     "1_Subol_Lota","20_Lal_Binni","21_Arborio","22_Turkish_Basmati","23_Ipsala",
@@ -59,7 +69,67 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _loadModel();
+    _syncData();
+  }
+
+  Future<void> _syncData() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult != ConnectivityResult.none) {
+      await _downloadModel();
+      await _downloadRiceInfo();
+    }
+    await _loadLocalData();
+  }
+
+  Future<void> _downloadModel() async {
+    const baseUrl = 'http://10.0.2.2:8000'; // For Android emulator
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/get_model/'));
+      if (response.statusCode == 200) {
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File('${directory.path}/rice_model.tflite');
+        await file.writeAsBytes(response.bodyBytes);
+      }
+    } catch (e) {
+      // Handle error
+    }
+  }
+
+  Future<void> _downloadRiceInfo() async {
+    const baseUrl = 'http://10.0.2.2:8000'; // For Android emulator
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/get_rice_info/'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final riceInfos = data['rice_infos'] as List;
+        final classes = riceInfos.map((info) => info['variety_name'] as String).toList();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList('rice_classes', classes);
+        await prefs.setString('rice_infos', jsonEncode(riceInfos));
+      }
+    } catch (e) {
+      // Handle error
+    }
+  }
+
+  Future<void> _loadLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    _riceClasses = prefs.getStringList('rice_classes') ?? _defaultRiceClasses;
+
+    final riceInfosJson = prefs.getString('rice_infos');
+    if (riceInfosJson != null) {
+      final decoded = jsonDecode(riceInfosJson) as List;
+      _riceInfos = decoded.map((item) => item as Map<String, dynamic>).toList();
+    }
+
+    final directory = await getApplicationDocumentsDirectory();
+    final file = File('${directory.path}/rice_model.tflite');
+    if (await file.exists()) {
+      _modelPath = file.path;
+    } else {
+      _modelPath = 'assets/rice_model.tflite';
+    }
+    await _loadModel();
   }
 
   Future<void> _loadModel() async {
@@ -69,7 +139,11 @@ class _MyHomePageState extends State<MyHomePage> {
         _errorMessage = '';
       });
 
-      _interpreter = await Interpreter.fromAsset('assets/rice_model.tflite');
+      if (_modelPath.startsWith('assets/')) {
+        _interpreter = await Interpreter.fromAsset(_modelPath);
+      } else {
+        _interpreter = await Interpreter.fromFile(File(_modelPath));
+      }
       _interpreter!.resizeInputTensor(0, [1, 224, 224, 3]);
       _interpreter!.allocateTensors();
       // Model loaded successfully
@@ -162,9 +236,17 @@ class _MyHomePageState extends State<MyHomePage> {
       final predictedClass = _riceClasses[maxIndex];
       final confidence = predictions[maxIndex] * 100;
 
+      // Get rice info
+      final riceInfoItem = _riceInfos.firstWhere(
+        (info) => info['variety_name'] == predictedClass,
+        orElse: () => {'info': 'Information not available.'},
+      );
+      final riceInfo = riceInfoItem['info'] as String;
+
       setState(() {
         _prediction = predictedClass;
         _confidence = confidence;
+        _riceInfo = riceInfo;
       });
     } catch (e) {
       setState(() {
@@ -285,6 +367,11 @@ class _MyHomePageState extends State<MyHomePage> {
                         const SizedBox(height: 8),
                         Text(
                           'Variety: $_prediction',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Info: $_riceInfo',
                           style: const TextStyle(fontSize: 16),
                         ),
                       ],
