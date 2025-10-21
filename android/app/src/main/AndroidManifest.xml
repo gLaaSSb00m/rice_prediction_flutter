@@ -15,7 +15,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <application
-        android:label="rice_prediction_flutter"
+        android:label="RiceVision"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity
