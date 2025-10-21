@@ -204,7 +204,7 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Upload Image'),
+        title: const Text('RiceVision App'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
@@ -339,7 +339,7 @@ class ResultPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Prediction Result'),
+        title: const Text('RiceVision App'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
@@ -391,13 +391,13 @@ class ResultPage extends StatelessWidget {
                           child: Column(
                             children: [
                               const Text(
-                                'Prediction Result',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                'Rice Veriety Name',
+                                style: TextStyle(fontSize: 14),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Rice Variety: $prediction',
-                                style: const TextStyle(fontSize: 16),
+                                '$prediction',
+                                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                                 textAlign: TextAlign.center,
                               ),
                             ],
@@ -477,7 +477,7 @@ class WelcomePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
                     const Text(
-                      'RiceVision APP',
+                      'RiceVision App',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
@@ -486,7 +486,7 @@ class WelcomePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     const Text(
-                      'Predict Rice Varieties with AI',
+                      'Rice Variety Classification Smart App',
                       style: TextStyle(
                         fontSize: 18,
                         color: Colors.black87,
