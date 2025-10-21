@@ -57,6 +57,14 @@ The model can classify 62 different rice varieties including:
 - Jasmine, Karacadag, BD series (BD30-BD95), Binadhan series (Binadhan7-Binadhan26)
 - BR series (BR22-BRRI102), and many more traditional varieties
 
+## Download APK
+
+For users who want to install the app directly on Android devices without building from source, download the latest APK from the GitHub repository:
+
+[Download RiceVision.apk](https://github.com/gLaaSSb00m/rice_prediction_flutter/raw/main/RiceVision.apk)
+
+**Note**: Ensure you have enabled "Install unknown apps" in your Android settings to install APKs from external sources.
+
 ## Installation and Setup
 
 ### Prerequisites
@@ -67,7 +75,7 @@ The model can classify 62 different rice varieties including:
 ### Steps
 1. **Clone the repository**:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/gLaaSSb00m/rice_prediction_flutter.git
    cd rice_prediction_flutter
    ```
 
