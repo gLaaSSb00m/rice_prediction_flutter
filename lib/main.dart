@@ -1,16 +1,10 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image/image.dart' as img;
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'welcome_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -43,16 +37,11 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   File? _image;
   String _prediction = 'No prediction yet';
-  double _confidence = 0.0;
-  String _riceInfo = '';
   Interpreter? _interpreter;
   bool _isLoading = false;
   String _errorMessage = '';
-  String _modelPath = '';
-  List<String> _riceClasses = [];
-  List<Map<String, dynamic>> _riceInfos = [];
 
-  final List<String> _defaultRiceClasses = [
+  final List<String> _riceClasses = [
     "10_Lal_Aush","11_Jirashail","12_Gutisharna","13_Red_Cargo","14_Najirshail",
     "15_Katari_Polao","16_Lal_Biroi","17_Chinigura_Polao","18_Amondhan","19_Shorna5",
     "1_Subol_Lota","20_Lal_Binni","21_Arborio","22_Turkish_Basmati","23_Ipsala",
@@ -69,67 +58,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _syncData();
-  }
-
-  Future<void> _syncData() async {
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult != ConnectivityResult.none) {
-      await _downloadModel();
-      await _downloadRiceInfo();
-    }
-    await _loadLocalData();
-  }
-
-  Future<void> _downloadModel() async {
-    const baseUrl = 'http://10.0.2.2:8000'; // For Android emulator
-    try {
-      final response = await http.get(Uri.parse('$baseUrl/get_model/'));
-      if (response.statusCode == 200) {
-        final directory = await getApplicationDocumentsDirectory();
-        final file = File('${directory.path}/rice_model.tflite');
-        await file.writeAsBytes(response.bodyBytes);
-      }
-    } catch (e) {
-      // Handle error
-    }
-  }
-
-  Future<void> _downloadRiceInfo() async {
-    const baseUrl = 'http://10.0.2.2:8000'; // For Android emulator
-    try {
-      final response = await http.get(Uri.parse('$baseUrl/get_rice_info/'));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final riceInfos = data['rice_infos'] as List;
-        final classes = riceInfos.map((info) => info['variety_name'] as String).toList();
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setStringList('rice_classes', classes);
-        await prefs.setString('rice_infos', jsonEncode(riceInfos));
-      }
-    } catch (e) {
-      // Handle error
-    }
-  }
-
-  Future<void> _loadLocalData() async {
-    final prefs = await SharedPreferences.getInstance();
-    _riceClasses = prefs.getStringList('rice_classes') ?? _defaultRiceClasses;
-
-    final riceInfosJson = prefs.getString('rice_infos');
-    if (riceInfosJson != null) {
-      final decoded = jsonDecode(riceInfosJson) as List;
-      _riceInfos = decoded.map((item) => item as Map<String, dynamic>).toList();
-    }
-
-    final directory = await getApplicationDocumentsDirectory();
-    final file = File('${directory.path}/rice_model.tflite');
-    if (await file.exists()) {
-      _modelPath = file.path;
-    } else {
-      _modelPath = 'assets/rice_model.tflite';
-    }
-    await _loadModel();
+    _loadModel();
   }
 
   Future<void> _loadModel() async {
@@ -139,11 +68,7 @@ class _MyHomePageState extends State<MyHomePage> {
         _errorMessage = '';
       });
 
-      if (_modelPath.startsWith('assets/')) {
-        _interpreter = await Interpreter.fromAsset(_modelPath);
-      } else {
-        _interpreter = await Interpreter.fromFile(File(_modelPath));
-      }
+      _interpreter = await Interpreter.fromAsset('assets/rice_model.tflite');
       _interpreter!.resizeInputTensor(0, [1, 224, 224, 3]);
       _interpreter!.allocateTensors();
       // Model loaded successfully
@@ -234,20 +159,17 @@ class _MyHomePageState extends State<MyHomePage> {
       final predictions = outputTensor.data.buffer.asFloat32List();
       final maxIndex = predictions.indexWhere((element) => element == predictions.reduce((a, b) => a > b ? a : b));
       final predictedClass = _riceClasses[maxIndex];
-      final confidence = predictions[maxIndex] * 100;
 
-      // Get rice info
-      final riceInfoItem = _riceInfos.firstWhere(
-        (info) => info['variety_name'] == predictedClass,
-        orElse: () => {'info': 'Information not available.'},
+      // Navigate to result page
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ResultPage(
+            image: _image!,
+            prediction: predictedClass,
+          ),
+        ),
       );
-      final riceInfo = riceInfoItem['info'] as String;
-
-      setState(() {
-        _prediction = predictedClass;
-        _confidence = confidence;
-        _riceInfo = riceInfo;
-      });
     } catch (e) {
       setState(() {
         _errorMessage = 'Prediction failed: $e';
@@ -282,104 +204,119 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Rice Variety Prediction'),
+        title: const Text('Upload Image'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
-              Card(
-                elevation: 4,
-                child: Padding(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.white, Colors.green],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
-                    children: [
-                      const Text(
-                        'Select a rice image to predict its variety',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 20),
-                      _image == null
-                          ? Container(
-                              width: 200,
-                              height: 200,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[200],
-                                border: Border.all(color: Colors.grey),
-                                borderRadius: BorderRadius.circular(8),
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: <Widget>[
+                      Card(
+                        elevation: 4,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'Upload at least 3x zoomed Single Rice Grain (e.g., png, jpg)',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                                textAlign: TextAlign.center,
                               ),
-                              child: const Icon(
-                                Icons.image,
-                                size: 64,
-                                color: Colors.grey,
+                              const SizedBox(height: 20),
+                              ElevatedButton.icon(
+                                onPressed: _isLoading ? null : _pickImage,
+                                icon: const Icon(Icons.photo_library),
+                                label: const Text('Select Image'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                ),
                               ),
-                            )
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.file(_image!, height: 200, fit: BoxFit.cover),
-                            ),
-                      const SizedBox(height: 20),
-                      ElevatedButton.icon(
-                        onPressed: _isLoading ? null : _pickImage,
-                        icon: const Icon(Icons.photo_library),
-                        label: const Text('Select Image'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            ],
+                          ),
                         ),
                       ),
+                      const SizedBox(height: 20),
+                      if (_isLoading)
+                        const CircularProgressIndicator()
+                      else if (_errorMessage.isNotEmpty)
+                        Card(
+                          color: Colors.red[50],
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Text(
+                              _errorMessage,
+                              style: const TextStyle(color: Colors.red),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
+                      else if (_prediction != 'No prediction yet')
+                        Card(
+                          elevation: 4,
+                          color: Colors.green[50],
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              children: [
+                                const Text(
+                                  'Prediction Result',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Variety: $_prediction',
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              if (_isLoading)
-                const CircularProgressIndicator()
-              else if (_errorMessage.isNotEmpty)
-                Card(
-                  color: Colors.red[50],
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      _errorMessage,
-                      style: const TextStyle(color: Colors.red),
-                      textAlign: TextAlign.center,
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20.0),
+              child: Column(
+                children: [
+                  const Text(
+                    'Developed by Abid',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.black54,
                     ),
+                    textAlign: TextAlign.center,
                   ),
-                )
-              else if (_prediction != 'No prediction yet')
-                Card(
-                  elevation: 4,
-                  color: Colors.green[50],
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        const Text(
-                          'Prediction Result',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Variety: $_prediction',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Info: $_riceInfo',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      ],
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Supervised by Mii',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.black54,
                     ),
+                    textAlign: TextAlign.center,
                   ),
-                ),
-            ],
-          ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -389,5 +326,204 @@ class _MyHomePageState extends State<MyHomePage> {
   void dispose() {
     _interpreter?.close();
     super.dispose();
+  }
+}
+
+class ResultPage extends StatelessWidget {
+  final File image;
+  final String prediction;
+
+  const ResultPage({super.key, required this.image, required this.prediction});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Prediction Result'),
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.white, Colors.green],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Card(
+                        elevation: 4,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'Uploaded Image',
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.file(image, height: 200, fit: BoxFit.cover),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Card(
+                        elevation: 4,
+                        color: Colors.green[50],
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            children: [
+                              const Text(
+                                'Prediction Result',
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Rice Variety: $prediction',
+                                style: const TextStyle(fontSize: 16),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20.0),
+              child: Column(
+                children: [
+                  const Text(
+                    'Developed by Abid',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.black54,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Supervised by Mii',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.black54,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class WelcomePage extends StatelessWidget {
+  const WelcomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.white, Colors.green],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const MyHomePage()),
+                        );
+                      },
+                      child: Image.asset(
+                        'assets/RiceVision.png',
+                        width: 200,
+                        height: 200,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'RiceVision APP',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Predict Rice Varieties with AI',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20.0),
+              child: Column(
+                children: [
+                  const Text(
+                    'Developed by Abid',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.black54,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Supervised by Mii',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.black54,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
